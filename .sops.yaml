@@ -1,0 +1,10 @@
+keys:
+  - &admin age16x20nnerz4c84ypl6def6af7wehgjpswmyhwc6058terfscz7eksaakzmm
+  - &byurik age16vd4ygx5k8hfzze5muwg2spr26v6rfwlk4zsvet3kuk97amjlagsykv3cy
+
+creation_rules:
+  - path_regex: nodes/byurik/secrets\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *byurik
