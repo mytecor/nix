@@ -3,12 +3,14 @@
 #
 # Partition modules (boot.nix, root-btrfs.nix, swap.nix, etc.)
 # add entries to myDisko.partitions via mkOption merging.
-{ config, lib, ... }:
+{ inputs, config, lib, ... }:
 
 let
   cfg = config.myDisko;
 in
 {
+  imports = [ inputs.disko.nixosModules.disko ];
+
   options.myDisko = {
     device = lib.mkOption {
       type = lib.types.str;

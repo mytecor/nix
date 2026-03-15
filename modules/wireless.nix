@@ -9,9 +9,11 @@
 #
 #   imports = [ ../../modules/wireless.nix ];
 #
-{ config, ... }:
+{ inputs, config, ... }:
 
 {
+  imports = [ inputs.sops-nix.nixosModules.sops ];
+
   sops.secrets.wifi_ssid = { };
   sops.secrets.wifi_psk = { };
 

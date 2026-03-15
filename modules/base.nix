@@ -1,6 +1,9 @@
-# Base configuration applied to every node.
-# SSH access, flakes, locale, timezone.
+{ ... }:
 {
+  # Boot
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.efi.canTouchEfiVariables = true;
+
   # Nix
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 

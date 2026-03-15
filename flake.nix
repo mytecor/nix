@@ -17,61 +17,34 @@
     };
   };
 
-  outputs =
-    inputs@{
-      self,
-      nixpkgs,
-      nixpkgs-stable,
-      disko,
-      sops-nix,
-      ...
-    }:
+  outputs = inputs@{ nixpkgs, nixpkgs-stable, ... }:
     let
-
-      mkNixosSystem =
-        {
-          system,
-          modules ? [ ],
-          specialArgs ? { },
-        }:
-        let
-          specialArgsMerged =
-            { inherit inputs; }
-            // specialArgs
-            // {
-              pkgs-stable = import nixpkgs-stable {
-                inherit system;
-                config = {
-                  allowUnfree = true;
+      mkNixosSystems =
+        nodes:
+        nixpkgs.lib.genAttrs nodes (name:
+          nixpkgs.lib.nixosSystem {
+            specialArgs = { inherit inputs; };
+            modules = [
+              { nixpkgs.config.allowUnfree = true; }
+              ./nodes/${name}/config.nix
+              {
+                networking.hostName = name;
+                system.stateVersion = inputs.nixpkgs-stable.lib.trivial.release;
+              }
+              ({ config, ... }: {
+                _module.args.pkgs-stable = import nixpkgs-stable {
+                  system = config.nixpkgs.hostPlatform.system;
+                  config.allowUnfree = true;
                 };
-              };
-            };
-        in
-        nixpkgs.lib.nixosSystem {
-          inherit system;
-          specialArgs = specialArgsMerged;
-          modules = [
-            disko.nixosModules.disko
-            sops-nix.nixosModules.sops
-          ] ++ modules;
-        };
-
+              })
+            ];
+          }
+        );
     in
     {
-      nixosConfigurations = {
-        novaga = mkNixosSystem {
-          system = "x86_64-linux";
-          modules = [
-            ./nodes/novaga/config.nix
-          ];
-        };
-
-        byurik = mkNixosSystem {
-          system = "x86_64-linux";
-          modules = [
-            ./nodes/byurik/config.nix
-          ];
-        };
-      };
+      nixosConfigurations = mkNixosSystems [
+        "novaga"
+        "byurik"
+      ];
     };
 }
