@@ -19,26 +19,24 @@ let
   reticulum-go-pkg = pkgs.callPackage ../../packages/reticulum-go.nix { };
 
   # All implementation-specific parameters in one place.
+  serviceName = "rns";
+  configDir = ".reticulum";
+  stateDir = "/var/lib/${serviceName}";
+
   impls = {
     reticulum-go = {
-      serviceName = "reticulum-go";
-      configDir = ".reticulum-go";
       mkConfigFile = shared.mkConfigFileGo;
       defaultPackage = reticulum-go-pkg;
       execStart = "${cfg.package}/bin/reticulum-go";
     };
     rnsd = {
-      serviceName = "rnsd";
-      configDir = ".reticulum";
       mkConfigFile = shared.mkConfigFilePy;
       defaultPackage = pkgs.python3Packages.rns;
-      execStart = "${cfg.package}/bin/rnsd --service --config /var/lib/rnsd/.reticulum";
+      execStart = "${cfg.package}/bin/rnsd --service --config ${stateDir}/${configDir}";
     };
   };
 
   impl = impls.${cfg.implementation};
-
-  stateDir = "/var/lib/${impl.serviceName}";
   configFile = impl.mkConfigFile { inherit pkgs cfg; };
 in
 {
@@ -49,14 +47,14 @@ in
 
     environment.systemPackages = [ cfg.package ];
 
-    systemd.services.${impl.serviceName} = {
-      description = "Reticulum Network Stack daemon (${impl.serviceName})";
+    systemd.services.${serviceName} = {
+      description = "Reticulum Network Stack daemon (${cfg.implementation})";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
 
       preStart = ''
-        install -d -m 0700 ${stateDir}/${impl.configDir}
-        cp --no-preserve=mode ${configFile} ${stateDir}/${impl.configDir}/config
+        install -d -m 0700 ${stateDir}/${configDir}
+        cp --no-preserve=mode ${configFile} ${stateDir}/${configDir}/config
       '';
 
       serviceConfig = {
@@ -64,7 +62,7 @@ in
         Restart = "on-failure";
         RestartSec = 5;
 
-        StateDirectory = impl.serviceName;
+        StateDirectory = serviceName;
         WorkingDirectory = stateDir;
 
         DynamicUser = true;

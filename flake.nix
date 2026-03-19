@@ -15,6 +15,11 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    rns-proxy = {
+      url = "github:mytecor/rns-proxy";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs@{ nixpkgs, nixpkgs-stable, ... }:

@@ -6,6 +6,7 @@
     ../../profiles/worker.nix
     ../../modules/wireless.nix
     ../../modules/rns
+    ../../modules/rns-proxy
   ];
 
   # Disk
@@ -14,27 +15,34 @@
   # Reticulum
   services.rns = {
     enable = true;
-    implementation = "reticulum-go";
+    logLevel = 7;
+    implementation = "rnsd";
     interfaces = {
       "Auto Discovery" = {
         type = "AutoInterface";
         enabled = true;
-        group_id = "reticulum";
         discovery_scope = "link";
         discovery_port = 29716;
         data_port = 42671;
       };
-      "Quad4 TCP" = {
-        type = "TCPClientInterface";
-        target_host = "rns.quad4.io";
-        target_port = 4242;
-      };
-      "Local UDP" = {
-        type = "UDPInterface";
-        address = "0.0.0.0:4242";
-      };
+      # "Quad4 TCP" = {
+      #   type = "TCPClientInterface";
+      #   target_host = "rns.quad4.io";
+      #   target_port = 4242;
+      # };
+      # "Local UDP" = {
+      #   type = "UDPInterface";
+      #   address = "0.0.0.0:4242";
+      # };
     };
     openFirewall = true;
+  };
+
+  # SOCKS5 proxy over Reticulum
+  services.rns-proxy.client = {
+    enable = true;
+    serverAddress = "72de6cf2964aad2299db7c1a8534ef91"; # hex hash of the remote RNS exit server
+    listenPort = 1080;
   };
 
   # Secrets
