@@ -50,7 +50,8 @@ in
     systemd.services.${serviceName} = {
       description = "Reticulum Network Stack daemon (${cfg.implementation})";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
+      wants = [ "network-online.target" ];
+      after = [ "network-online.target" ];
 
       preStart = ''
         install -d -m 0700 ${stateDir}/${configDir}

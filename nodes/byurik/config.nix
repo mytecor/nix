@@ -41,7 +41,7 @@
   # SOCKS5 proxy over Reticulum
   services.rns-proxy.client = {
     enable = true;
-    serverAddress = "72de6cf2964aad2299db7c1a8534ef91"; # hex hash of the remote RNS exit server
+    serverAddress = "7959c25d1fe14de475bfaec114a58cf3"; # hex hash of the remote RNS exit server
     listenPort = 1080;
   };
 

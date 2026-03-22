@@ -50,15 +50,21 @@ in
         description = "The rns-proxy package to use.";
       };
 
-      serverAddress = lib.mkOption {
+      destination = lib.mkOption {
         type = lib.types.str;
         description = "RNS destination hash of the remote server (hex string).";
       };
 
-      listenPort = lib.mkOption {
-        type = lib.types.port;
-        default = 1080;
-        description = "Local SOCKS5 listen port.";
+      listenAddress = lib.mkOption {
+        type = lib.types.str;
+        default = "127.0.0.1:1080";
+        description = "Local SOCKS5 listen address (ip:port).";
+      };
+
+      openFirewall = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Open the SOCKS5 listen port in the firewall.";
       };
 
       debug = lib.mkOption {
@@ -122,8 +128,8 @@ in
           ] ++ lib.optional cfg.client.debug "--debug"
             ++ [
               "client"
-              "--server" cfg.client.serverAddress
-              "--port" (toString cfg.client.listenPort)
+              "--destination" cfg.client.destination
+              "--listen" cfg.client.listenAddress
             ]);
 
           Restart = "on-failure";
@@ -140,6 +146,12 @@ in
           NoNewPrivileges = true;
           ReadWritePaths = [ "/var/lib/rns-proxy-client" ];
         };
+      };
+
+      networking.firewall = lib.mkIf cfg.client.openFirewall {
+        allowedTCPPorts = [
+          (lib.toInt (lib.last (lib.splitString ":" cfg.client.listenAddress)))
+        ];
       };
     })
   ];
