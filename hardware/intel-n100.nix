@@ -1,4 +1,4 @@
-{ config, lib, modulesPath, inputs, ... }:
+{ config, lib, pkgs, modulesPath, inputs, ... }:
 
 {
   imports = [
@@ -12,4 +12,13 @@
   boot.initrd.availableKernelModules = [ "xhci_pci" "ahci" "usbhid" "usb_storage" "sd_mod" ];
   boot.kernelModules = [ "kvm-intel" ];
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+
+  # Intel UHD Graphics (Alder Lake-N)
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [
+      intel-media-driver # VAAPI (iHD)
+      intel-compute-runtime # OpenCL
+    ];
+  };
 }

@@ -75,11 +75,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1774179751,
-        "narHash": "sha256-BTMug2ECAzdzoIsBVjLv524mGBP7OWdFUqAQTiydsOE=",
+        "lastModified": 1774184606,
+        "narHash": "sha256-hEMZsQImRCiuMKhRABfZg6WQR/z04/4G2n6+NmU6sSM=",
         "owner": "mytecor",
         "repo": "rns-proxy",
-        "rev": "bd5e20ce252ad5d9c55076fbd8ca9b716eaef97c",
+        "rev": "dcc775e3124aa8152cb2ca39c7738303a6bed06b",
         "type": "github"
       },
       "original": {
