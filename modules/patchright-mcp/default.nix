@@ -52,6 +52,7 @@ let
     [ "--caps=${lib.concatStringsSep "," cfg.caps}" ]
     ++ lib.optionals (cfg.openFirewall && cfg.allowedHosts != null)
     [ "--allowed-hosts" cfg.allowedHosts ]
+    ++ lib.concatMap (s: [ "--init-script" s ]) cfg.initScripts
     ++ cfg.extraArgs
   );
 
@@ -141,6 +142,16 @@ in
       default = if cfg.openFirewall then "*" else null;
       defaultText = lib.literalExpression ''if openFirewall then "*" else null'';
       description = "Allowed hosts for DNS rebinding protection. Defaults to `\"*\"` when `openFirewall` is enabled.";
+    };
+
+    initScripts = lib.mkOption {
+      type = lib.types.listOf lib.types.path;
+      default = [ ];
+      description = ''
+        JavaScript files evaluated via --init-script before any page script.
+        Useful for stealth patches (screen spoofing, API overrides, etc.).
+        Each path is passed as a separate --init-script argument.
+      '';
     };
 
     extraArgs = lib.mkOption {

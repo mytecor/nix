@@ -53,31 +53,52 @@
     enable = true;
     port = 9222;
     enableGpu = true;
-    disableWebrtcLeak = true; # prevent real IP leak via WebRTC
+    webrtcPolicy = "default"; # unrestricted — avoids "WebRTC disabled" fingerprint
     disableBatteryStatus = true; # prevent 100%/charging headless fingerprint
     disableHeadlessFlags = true; # disable HeadlessMode feature flag
     webglMode = "native"; # keep real GPU; change to "swiftshader" to hide HW model
+    blockLocalPorts = [ 22 3389 ]; # block port scanning (SSH, RDP) from websites
     userDataDir = "/var/lib/headless-chromium/profile"; # persistent profile (anti-incognito)
     screenSize = "1366x768"; # sets both screen resolution and window size
 
-    # Remove "HeadlessChrome" from User-Agent — the #1 headless tell.
-    # Must match the real Chrome version on the system.
-    userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+    # User-Agent is auto-generated from the actual Chromium package version.
+    # No need to hardcode — this prevents version mismatch between UA and
+    # real JS/CSS feature set (which detectors like CreepJS check).
+    # Uncomment to override:
+    # userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
     # Locale & timezone — should be consistent with the IP geo.
     lang = "ru-RU";
     acceptLang = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7";
     timezone = "Europe/Moscow";
 
-    # Install common fonts so the font fingerprint looks realistic (not 1/51).
+    # Install common fonts so the font fingerprint looks realistic.
+    # CreepJS uses FontFace.load() to test ~51 specific fonts; document.fonts.check()
+    # gives false positives due to fallback.  corefonts provides the Microsoft
+    # families (Arial, Times New Roman, Verdana, etc.) that Linux normally lacks.
     fontPackages = with pkgs; [
+      corefonts # Arial, Times New Roman, Verdana, Georgia, Comic Sans, Impact, Trebuchet, Courier New, etc.
       liberation_ttf # Liberation family (metric-compatible with Arial, Times, Courier)
       noto-fonts # Noto Sans/Serif (wide Unicode coverage)
+      noto-fonts-cjk-sans # CJK fonts (very common on desktop Linux)
       noto-fonts-color-emoji # Emoji support
-      dejavu_fonts # DejaVu (already present, but explicit)
-      roboto # Roboto (common on Linux)
-      ubuntu-classic # Ubuntu fonts
-      freefont_ttf # GNU FreeFont
+      dejavu_fonts # DejaVu (standard Linux fallback)
+      roboto # Roboto (common on Linux/Android)
+      ubuntu-classic # Ubuntu font family
+      freefont_ttf # GNU FreeFont (FreeSerif, FreeSans, FreeMono)
+      source-code-pro # Adobe Source Code Pro (popular dev font)
+      source-sans-pro # Adobe Source Sans (common on web)
+      source-serif-pro # Adobe Source Serif
+      inter # Inter (modern UI font)
+      fira # Fira Sans/Mono (Mozilla)
+      fira-code # Fira Code (ligature monospace, tested by CreepJS)
+      hack-font # Hack (popular monospace)
+      cantarell-fonts # GNOME default UI font
+      dina-font # Dina programming font
+      open-sans # Open Sans (very popular)
+      lato # Lato (common Google Font)
+      # Note: Calibri/Cambria/Consolas/Segoe UI (vistafonts) are not in nixpkgs.
+      # corefonts covers the most commonly tested MS fonts.
     ];
   };
 
@@ -89,11 +110,19 @@
     host = "0.0.0.0";
     openFirewall = true;
 
-    # Override UA and viewport at the Patchright level too, in case
-    # the MCP server creates new contexts/pages.
-    userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
-    viewportSize = "1366x768";
+    # NOTE: --user-agent and --viewport-size are ignored when using
+    # --cdp-endpoint (CdpContextFactory uses browser.contexts()[0]
+    # directly and never applies contextOptions).  All browser-level
+    # settings must be configured in headless-chromium above.
+
+    # Stealth init script — patches JS-level headless fingerprints
+    # (screen dimensions, battery API, permissions, etc.) that cannot
+    # be fixed via Chromium CLI flags alone.
+    initScripts = [ ../../modules/patchright-mcp/stealth.js ];
   };
+
+  # Locale — must be generated so LC_ALL=ru_RU.UTF-8 works in Chromium
+  i18n.supportedLocales = [ "ru_RU.UTF-8/UTF-8" "en_US.UTF-8/UTF-8" ];
 
   # Secrets
   sops.defaultSopsFile = ./secrets.yaml;

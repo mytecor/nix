@@ -51,8 +51,8 @@ let
     ];
   }.${cfg.webglMode};
 
-  webrtcArgs = lib.optional cfg.disableWebrtcLeak
-    "--webrtc-ip-handling-policy=disable_non_proxied_udp";
+  webrtcArgs = lib.optional (cfg.webrtcPolicy != "default")
+    "--webrtc-ip-handling-policy=${cfg.webrtcPolicy}";
 
   # Collect ALL --disable-features into a single flag.  Chromium only
   # honours the *last* --disable-features on the command line, so having
@@ -67,10 +67,20 @@ let
   # Chrome, fewer fingerprints than classic --headless.
   headlessArg = "--headless=new";
 
+  # Derive the Chromium major version from the package.  This is used to
+  # auto-generate the User-Agent string when userAgent is null, ensuring
+  # the UA always matches the actual browser binary.
+  chromiumVersion = cfg.package.version or "0.0.0.0";
+  chromiumMajor = builtins.head (builtins.split "\\." chromiumVersion);
+
+  effectiveUserAgent = if cfg.userAgent != null
+    then cfg.userAgent
+    else "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromiumVersion} Safari/537.36";
+
   # Override the User-Agent string to remove "HeadlessChrome" — the single
-  # most obvious headless tell.  When null the default UA is used as-is.
-  userAgentArgs = lib.optional (cfg.userAgent != null)
-    "--user-agent=${cfg.userAgent}";
+  # most obvious headless tell.  The default auto-generates a UA from the
+  # actual Chromium package version to avoid version mismatches.
+  userAgentArgs = [ "--user-agent=${effectiveUserAgent}" ];
 
   # Language / locale flags.  Without these, headless Chrome sends no
   # Accept-Language header and navigator.language defaults to "en-US" which
@@ -91,12 +101,14 @@ let
   # Both flags are needed so that screen.width/height matches the viewport:
   #   --ozone-override-screen-size  → sets screen.width / screen.height
   #   --window-size                 → sets the window (and thus viewport) size
-  # Convert "1366x768" → "1366,768" for --window-size (uses comma separator).
+  # NOTE: Both flags use comma-separated format: "1366,768" (not "1366x768").
+  # The ozone flag is unreliable on some Chromium versions (known regression),
+  # so JS-level screen patching via init-script is also recommended.
   screenArgs = lib.optionals (cfg.screenSize != null) (
-    let windowSize = builtins.replaceStrings [ "x" ] [ "," ] cfg.screenSize;
+    let commaSep = builtins.replaceStrings [ "x" ] [ "," ] cfg.screenSize;
     in [
-      "--ozone-override-screen-size=${cfg.screenSize}"
-      "--window-size=${windowSize}"
+      "--ozone-override-screen-size=${commaSep}"
+      "--window-size=${commaSep}"
     ]
   );
 
@@ -114,6 +126,11 @@ let
     "--disable-notifications"
     "--disable-dbus"
     "--no-default-browser-check"
+    "--disable-infobars"
+    "--disable-component-extensions-with-background-pages"
+    "--disable-ipc-flooding-protection"
+    "--password-store=basic"
+    "--use-mock-keychain"
     "--remote-debugging-address=127.0.0.1"
     "--remote-debugging-port=${toString cfg.port}"
   ] ++ gpuArgs
@@ -130,6 +147,10 @@ let
     "--disable-translate"
     ++ lib.optional cfg.noFirstRun
     "--no-first-run"
+    ++ lib.optional (cfg.blockLocalPorts != [])
+    "--host-rules=${lib.concatStringsSep ", " (map (p:
+      "MAP localhost:${toString p} ~NOTFOUND, MAP 127.0.0.1:${toString p} ~NOTFOUND, MAP [::1]:${toString p} ~NOTFOUND"
+    ) cfg.blockLocalPorts)}"
     ++ cfg.extraArgs;
 
   # Escape each argument for systemd ExecStart: double-quote any
@@ -185,10 +206,29 @@ in
     disableWebrtcLeak = lib.mkOption {
       type = lib.types.bool;
       default = false;
+      visible = false;
+      description = "Deprecated: use webrtcPolicy instead.";
+    };
+
+    webrtcPolicy = lib.mkOption {
+      type = lib.types.enum [
+        "default"
+        "default_public_interface_only"
+        "default_public_and_private_interfaces"
+        "disable_non_proxied_udp"
+      ];
+      default = "default";
       description = ''
-        Prevent WebRTC from leaking the real IP address by setting
-        --webrtc-ip-handling-policy=disable_non_proxied_udp.
-        Strongly recommended when using a proxy.
+        WebRTC IP handling policy.
+
+        - "default": no restrictions (leaks local + public IPs)
+        - "default_public_interface_only": WebRTC works but only
+          exposes the public IP — hides local/VPN IPs.  Looks natural
+          to detectors (WebRTC is not "disabled") while preventing
+          the most common leak vector.
+        - "default_public_and_private_interfaces": expose both
+        - "disable_non_proxied_udp": fully block non-proxied UDP
+          (shows as "WebRTC: disabled" — suspicious fingerprint)
       '';
     };
 
@@ -217,9 +257,11 @@ in
       default = null;
       example = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
       description = ''
-        Override the User-Agent string.  By default headless Chrome sends
-        a UA containing "HeadlessChrome" — the single most obvious headless
-        fingerprint.  Set this to a normal Chrome UA to hide headless mode.
+        Override the User-Agent string.  When null (the default), a standard
+        Chrome UA is auto-generated from the actual Chromium package version,
+        ensuring the UA always matches the real browser binary.  This avoids
+        the common pitfall where a hardcoded UA drifts out of sync with the
+        Chromium version in nixpkgs.
       '';
     };
 
@@ -322,6 +364,19 @@ in
       '';
     };
 
+    blockLocalPorts = lib.mkOption {
+      type = lib.types.listOf lib.types.port;
+      default = [ ];
+      example = [ 22 3389 ];
+      description = ''
+        Block Chromium from connecting to these ports on localhost.
+        Websites like BrowserScan probe local ports (SSH, RDP, etc.)
+        via WebSocket to fingerprint the host.  Blocking access to
+        these ports prevents detection of running services.
+        Uses iptables owner-based filtering on the Chromium user.
+      '';
+    };
+
     extraArgs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -355,7 +410,18 @@ in
           # so Chromium silently fails to connect without error logs.
           "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/nosocket"
           "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/tmp/nosocket"
-        ] ++ timezoneEnv;
+        ] ++ timezoneEnv
+          # Set locale env vars so Intl APIs (DateTimeFormat, NumberFormat, etc.)
+          # default to the configured language instead of the system locale.
+          # This fixes the "language mismatch" detection on BrowserScan/CreepJS.
+          # NOTE: glibc expects underscore (ru_RU), not BCP-47 dash (ru-RU).
+          ++ lib.optionals (cfg.lang != null) (
+            let glibcLocale = builtins.replaceStrings ["-"] ["_"] cfg.lang;
+            in [
+              "LANGUAGE=${cfg.lang}"
+              "LC_ALL=${glibcLocale}.UTF-8"
+            ]
+          );
 
         ProtectSystem = "strict";
         ProtectHome = true;
