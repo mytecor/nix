@@ -18,6 +18,9 @@
 let
   cfg = config.services.patchright-mcp;
 
+  # Bundled stealth.js is always included first, then user-supplied scripts.
+  allInitScripts = [ ./stealth.js ] ++ cfg.initScripts;
+
   # Only pass --headless when Patchright manages its own browser.
   # When connecting to an existing CDP endpoint the browser is already
   # running and the flag is meaningless (and leaks headless fingerprints
@@ -52,7 +55,7 @@ let
     [ "--caps=${lib.concatStringsSep "," cfg.caps}" ]
     ++ lib.optionals (cfg.openFirewall && cfg.allowedHosts != null)
     [ "--allowed-hosts" cfg.allowedHosts ]
-    ++ lib.concatMap (s: [ "--init-script" s ]) cfg.initScripts
+    ++ lib.concatMap (s: [ "--init-script" s ]) allInitScripts
     ++ cfg.extraArgs
   );
 
@@ -166,11 +169,11 @@ in
       description = "Patchright MCP Server";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ]
-        ++ lib.optional (config.services.headless-chromium.enable or false)
-        "headless-chromium.service";
+        ++ lib.optional (config.services.chromium.enable or false)
+        "chromium.service";
       requires =
-        lib.optional (config.services.headless-chromium.enable or false)
-        "headless-chromium.service";
+        lib.optional (config.services.chromium.enable or false)
+        "chromium.service";
 
       serviceConfig = {
         ExecStart = args;

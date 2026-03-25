@@ -8,7 +8,7 @@
   "use strict";
 
   // ─── Configuration ────────────────────────────────────────────────
-  // These values should match the headless-chromium service config.
+  // These values should match the chromium service config.
   const SCREEN_WIDTH = 1366;
   const SCREEN_HEIGHT = 768;
   const AVAIL_WIDTH = 1366;
