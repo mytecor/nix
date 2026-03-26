@@ -20,10 +20,12 @@
   webrtcPolicy        ? "default",
   disableBatteryStatus ? true,
   disableHeadlessFlags ? true,
+  disableMdnsIce      ? true,
   lang                ? null,
   acceptLang          ? null,
   timezone            ? null,
   blockLocalPorts     ? [],
+  taskbarHeight       ? 40,   # simulate a taskbar to defeat noTaskbar / hasVvpScreenRes
 }:
 {
   inherit
@@ -31,8 +33,10 @@
     webrtcPolicy
     disableBatteryStatus
     disableHeadlessFlags
+    disableMdnsIce
     lang
     acceptLang
     timezone
-    blockLocalPorts;
+    blockLocalPorts
+    taskbarHeight;
 }

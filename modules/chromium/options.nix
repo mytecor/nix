@@ -164,6 +164,17 @@
       '';
     };
 
+    disableMdnsIce = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Disable mDNS ICE candidate obfuscation (WebRtcHideLocalIpsWithMdns).
+        When enabled, WebRTC exposes real local IPs instead of mDNS UUIDs.
+        This prevents ICE gathering from hanging when STUN servers are
+        unreachable (common in headless environments).
+      '';
+    };
+
     lang = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -199,6 +210,20 @@
       description = ''
         Block Chromium from connecting to these ports on localhost
         via --host-rules.
+      '';
+    };
+
+    taskbarHeight = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 0;
+      example = 40;
+      description = ''
+        Simulated taskbar height in pixels.  When non-zero, the Chromium
+        window is launched `taskbarHeight` pixels shorter than the virtual
+        screen (set via `screenSize`).  This makes `outerHeight < screen.height`
+        and, combined with the JS stealth patch for `screen.availHeight`,
+        prevents the "noTaskbar" and "hasVvpScreenRes" headless signals
+        in fingerprinting tools like CreepJS.
       '';
     };
   };

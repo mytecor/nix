@@ -69,7 +69,8 @@ let
   # so collect everything into a single list.
   allDisableFeatures =
     optional cfg.disableBatteryStatus "BatteryStatus"
-    ++ optional cfg.disableHeadlessFlags "HeadlessMode";
+    ++ optional cfg.disableHeadlessFlags "HeadlessMode"
+    ++ optional cfg.disableMdnsIce "WebRtcHideLocalIpsWithMdns";
 
   # --name=value flags derived from nullable options.
   valueFlags = filterAttrs (_: v: v != null) {
@@ -89,6 +90,12 @@ let
 
   screenSize = optionalString (cfg.screenSize != null)
     "${toString cfg.screenSize.width},${toString cfg.screenSize.height}";
+
+  # Window size: same as screen, minus the simulated taskbar.
+  # This makes outerHeight < screen.height, which defeats the
+  # "noTaskbar" and "hasVvpScreenRes" headless fingerprint checks.
+  windowSize = optionalString (cfg.screenSize != null)
+    "${toString cfg.screenSize.width},${toString (cfg.screenSize.height - cfg.taskbarHeight)}";
 
   # Final command line
   chromiumArgs = [
@@ -122,10 +129,10 @@ let
   # disable-features (must be a single flag)
   ++ optional (allDisableFeatures != [])
     "--disable-features=${concatStringsSep "," allDisableFeatures}"
-  # Screen size
+  # Screen size (ozone = full screen; window = screen minus taskbar)
   ++ optionals (screenSize != "") [
     "--ozone-override-screen-size=${screenSize}"
-    "--window-size=${screenSize}"
+    "--window-size=${windowSize}"
   ]
   # WebRTC / host-rules
   ++ optional (cfg.webrtcPolicy != "default")
