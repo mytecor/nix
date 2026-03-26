@@ -4,9 +4,6 @@
 # connections via CDP (default port 9222).  Set `headless = true` to
 # run in headless mode.
 #
-# Anti-detect options (userAgent, webrtcPolicy, lang, timezone, etc.)
-# are available directly under services.chromium.*.
-#
 # Usage:
 #
 #   imports = [ ../../modules/chromium ];
@@ -14,9 +11,7 @@
 #   services.chromium = {
 #     enable = true;
 #     headless = true;
-#     port = 9222;
-#     disableBatteryStatus = true;
-#     disableHeadlessFlags = true;
+#     remoteDebugging = "127.0.0.1:9222";
 #     lang = "ru-RU";
 #     acceptLang = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7";
 #     timezone = "Europe/Moscow";
@@ -27,174 +22,167 @@
 let
   cfg = config.services.chromium;
 
-  # Helper: emit "--name=value" when value is non-null, empty list otherwise.
-  optFlag = name: value:
-    lib.optional (value != null) "--${name}=${value}";
+  inherit (lib)
+    concatStringsSep filterAttrs mapAttrsToList mkIf
+    optional optionals optionalAttrs optionalString splitString;
 
-  gpuArgs = if cfg.enableGpu then [
-    "--ozone-platform=headless"
-    "--use-gl=angle"
-    "--use-angle=gles-egl"
-    "--enable-gpu-rasterization"
-    "--enable-zero-copy"
-    "--enable-features=VaapiVideoDecoder,VaapiVideoEncoder"
-  ] else [
-    "--disable-gpu"
-    "--disable-software-rasterizer"
-    "--disable-vulkan"
-  ];
+  # Parse "address:port" for CDP flags and firewall rule.
+  rdParts   = splitString ":" cfg.remoteDebugging;
+  rdAddress = builtins.elemAt rdParts 0;
+  rdPort    = builtins.elemAt rdParts 1;
 
-  # Features that must be disabled.  Chromium only honours the *last*
-  # --disable-features flag, so we collect everything into one list and
-  # emit a single flag.
-  gpuDisableFeatures = [
-    "Vulkan" "VulkanFromANGLE" "UseChromeOSDirectVideoDecoder"
-  ] ++ lib.optional cfg.enableGpu "DefaultANGLEVulkan";
+  gpuArgs =
+    if cfg.enableGpu then
+      (optional cfg.headless "--ozone-platform=headless") ++ [
+        "--ignore-gpu-blocklist"
+        "--disable-software-rasterizer"
+        "--enable-gpu-rasterization"
+        "--enable-zero-copy"
+        "--use-gl=angle"
+        "--use-angle=vulkan"
+        "--enable-features=VaapiVideoDecoder,VaapiVideoEncoder,Vulkan,DefaultANGLEVulkan"
+      ]
+    else [
+      "--disable-gpu"
+      "--disable-software-rasterizer"
+      "--disable-vulkan"
+    ];
 
   webglArgs = {
-    "native" = [ ]; # use whatever GPU is present (real hardware fingerprint)
-    "swiftshader" = [
-      "--use-gl=angle"
-      "--use-angle=swiftshader"
-    ];
-    "disable" = [
-      "--disable-webgl"
-      "--disable-webgl2"
-    ];
+    native      = [ ];
+    swiftshader = [ "--use-gl=angle" "--use-angle=swiftshader" ];
+    disable     = [ "--disable-webgl" "--disable-webgl2" ];
   }.${cfg.webglMode};
 
-  # --- Anti-detect ---
+  webgpuArgs = optionals cfg.enableWebGPU [
+    "--enable-unsafe-webgpu"
+  ];
 
-  # Auto-generate User-Agent from the actual Chromium package version so
-  # the UA always matches the real browser binary.
+  # Auto-generate UA from the package version so it always matches
+  # the real browser binary.
   effectiveUserAgent =
-    if cfg.userAgent != null
-    then cfg.userAgent
-    else "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${cfg.package.version} Safari/537.36";
+    if cfg.userAgent != null then cfg.userAgent
+    else "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+       + "(KHTML, like Gecko) Chrome/${cfg.package.version} Safari/537.36";
 
-  blockLocalPortsArgs = lib.optional (cfg.blockLocalPorts != [])
-    "--host-rules=${lib.concatStringsSep ", " (map (p:
-      "MAP localhost:${toString p} ~NOTFOUND, MAP 127.0.0.1:${toString p} ~NOTFOUND, MAP [::1]:${toString p} ~NOTFOUND"
-    ) cfg.blockLocalPorts)}";
+  # Chromium only honours the *last* --disable-features flag,
+  # so collect everything into a single list.
+  allDisableFeatures =
+    optional cfg.disableBatteryStatus "BatteryStatus"
+    ++ optional cfg.disableHeadlessFlags "HeadlessMode";
 
-  # Anti-detect CLI args.
-  antiDetectArgs = [
-    "--disable-blink-features=AutomationControlled"
-    "--disable-infobars"
-    "--user-agent=${effectiveUserAgent}"
-  ] ++ lib.optional (cfg.webrtcPolicy != "default")
-       "--webrtc-ip-handling-policy=${cfg.webrtcPolicy}"
-    ++ optFlag "lang" cfg.lang
-    ++ optFlag "accept-lang" cfg.acceptLang
-    ++ blockLocalPortsArgs;
+  # --name=value flags derived from nullable options.
+  valueFlags = filterAttrs (_: v: v != null) {
+    "user-agent"    = effectiveUserAgent;
+    "lang"          = cfg.lang;
+    "accept-lang"   = cfg.acceptLang;
+    "user-data-dir" = cfg.userDataDir;
+    "proxy-server"  = cfg.proxyServer;
+  };
 
-  # Anti-detect --disable-features entries.
-  antiDetectDisableFeatures =
-    lib.optional cfg.disableBatteryStatus "BatteryStatus"
-    ++ lib.optional cfg.disableHeadlessFlags "HeadlessMode";
+  # Block Chromium from reaching these localhost ports.
+  blockRule = p:
+    let s = toString p; in
+    "MAP localhost:${s} ~NOTFOUND, "
+    + "MAP 127.0.0.1:${s} ~NOTFOUND, "
+    + "MAP [::1]:${s} ~NOTFOUND";
 
-  # --- End anti-detect ---
+  screenSize = optionalString (cfg.screenSize != null)
+    "${toString cfg.screenSize.width},${toString cfg.screenSize.height}";
 
-  # Collect ALL --disable-features into a single flag.  Chromium only
-  # honours the *last* --disable-features on the command line, so having
-  # multiple flags causes earlier ones to be silently ignored.
-  allDisableFeatures = gpuDisableFeatures
-    ++ antiDetectDisableFeatures;
-
-  disableFeaturesArgs = lib.optional (allDisableFeatures != [])
-    "--disable-features=${lib.concatStringsSep "," allDisableFeatures}";
-
-  # Both flags are needed so that screen.width/height matches the viewport:
-  #   --ozone-override-screen-size  -> sets screen.width / screen.height
-  #   --window-size                 -> sets the window (and thus viewport) size
-  # NOTE: Both flags use comma-separated format: "1366,768" (not "1366x768").
-  screenArgs = lib.optionals (cfg.screenSize != null) (
-    let commaSep = "${toString cfg.screenSize.width},${toString cfg.screenSize.height}";
-    in [
-      "--ozone-override-screen-size=${commaSep}"
-      "--window-size=${commaSep}"
-    ]
-  );
-
-  # Build the argument list.  utils.escapeSystemdExecArgs handles quoting
-  # of arguments that contain spaces, percent signs, dollar signs, etc.
+  # Final command line
   chromiumArgs = [
     "${cfg.package}/bin/chromium"
-  ] ++ lib.optional cfg.headless
-    # Use --headless=new (Chrome 112+): same rendering path as
-    # headed Chrome, fewer fingerprints than classic --headless.
+  ]
+  # Headless + stealth
+  ++ optionals cfg.headless [
     "--headless=new"
-  ++ [
-    "--no-sandbox"
-    "--disable-dev-shm-usage"
     "--disable-background-networking"
-    "--disable-sync"
     "--disable-notifications"
+    "--disable-ipc-flooding-protection"
+    "--disable-blink-features=AutomationControlled"
+    "--disable-infobars"
+  ]
+  # Hardened base
+  ++ [
+    "--disable-sync"
     "--disable-dbus"
     "--no-default-browser-check"
     "--disable-component-extensions-with-background-pages"
-    "--disable-ipc-flooding-protection"
     "--password-store=basic"
     "--use-mock-keychain"
-    "--remote-debugging-address=127.0.0.1"
-    "--remote-debugging-port=${toString cfg.port}"
-  ] ++ gpuArgs
-    ++ webglArgs
-    ++ disableFeaturesArgs
-    ++ screenArgs
-    ++ optFlag "user-data-dir" cfg.userDataDir
-    ++ optFlag "proxy-server" cfg.proxyServer
-    ++ lib.optional cfg.disableTranslate "--disable-translate"
-    ++ lib.optional cfg.noFirstRun "--no-first-run"
-    ++ antiDetectArgs;
+  ]
+  # CDP
+  ++ optionals (cfg.remoteDebugging != null) [
+    "--remote-debugging-address=${rdAddress}"
+    "--remote-debugging-port=${rdPort}"
+  ]
+  # GPU / WebGL / WebGPU
+  ++ gpuArgs ++ webglArgs ++ webgpuArgs
+  # disable-features (must be a single flag)
+  ++ optional (allDisableFeatures != [])
+    "--disable-features=${concatStringsSep "," allDisableFeatures}"
+  # Screen size
+  ++ optionals (screenSize != "") [
+    "--ozone-override-screen-size=${screenSize}"
+    "--window-size=${screenSize}"
+  ]
+  # WebRTC / host-rules
+  ++ optional (cfg.webrtcPolicy != "default")
+    "--webrtc-ip-handling-policy=${cfg.webrtcPolicy}"
+  ++ optional (cfg.blockLocalPorts != [])
+    "--host-rules=${concatStringsSep ", " (map blockRule cfg.blockLocalPorts)}"
+  # Value flags
+  ++ mapAttrsToList (n: v: "--${n}=${v}") valueFlags
+  # Boolean flags
+  ++ optional cfg.disableTranslate "--disable-translate"
+  ++ optional cfg.noFirstRun       "--no-first-run";
 
 in
 {
   imports = [ ./options.nix ];
 
-  config = lib.mkIf cfg.enable {
+  config = mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
 
     systemd.services.chromium = {
-      description = "Chromium (CDP)";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
+      description = "Chromium"
+        + optionalString (cfg.remoteDebugging != null) " (CDP ${cfg.remoteDebugging})";
 
-      # Environment as an attrset — cleaner than "KEY=VALUE" strings
-      # and lets NixOS handle escaping.
+      wantedBy = [ "multi-user.target" ];
+      after    = [ "network.target" ];
+
       environment = {
         HOME = "/var/lib/chromium";
-        # Point D-Bus at a nonexistent socket inside PrivateTmp
-        # so Chromium silently fails to connect without error logs.
+        # Point D-Bus at a nonexistent socket so Chromium silently
+        # fails to connect without spamming error logs.
         DBUS_SESSION_BUS_ADDRESS = "unix:path=/tmp/nosocket";
-        DBUS_SYSTEM_BUS_ADDRESS = "unix:path=/tmp/nosocket";
-      } // lib.optionalAttrs (cfg.timezone != null) {
-        TZ = cfg.timezone;
-      } // lib.optionalAttrs (cfg.lang != null) (
-        # Locale env vars so Intl APIs (DateTimeFormat, NumberFormat, etc.)
-        # default to the configured language instead of the system locale.
-        # NOTE: glibc expects underscore (ru_RU), not BCP-47 dash (ru-RU).
-        let glibcLocale = builtins.replaceStrings ["-"] ["_"] cfg.lang;
-        in {
-          LANGUAGE = cfg.lang;
-          LC_ALL = "${glibcLocale}.UTF-8";
-        }
-      );
+        DBUS_SYSTEM_BUS_ADDRESS  = "unix:path=/tmp/nosocket";
+      }
+      // optionalAttrs (cfg.timezone != null) { TZ = cfg.timezone; }
+      // optionalAttrs (cfg.lang != null) {
+        LANGUAGE = cfg.lang;
+        LC_ALL   = "${builtins.replaceStrings ["-"] ["_"] cfg.lang}.UTF-8";
+      };
 
       serviceConfig = {
-        ExecStart = utils.escapeSystemdExecArgs chromiumArgs;
-        Restart = "on-failure";
+        ExecStart  = utils.escapeSystemdExecArgs chromiumArgs;
+        Restart    = "on-failure";
         RestartSec = 10;
 
-        DynamicUser = true;
-        StateDirectory = "chromium";
+        # Sandboxing
+        DynamicUser      = true;
+        StateDirectory   = "chromium";
         WorkingDirectory = "/var/lib/chromium";
+        ProtectSystem    = "strict";
+        ProtectHome      = true;
+        PrivateTmp       = true;
+        NoNewPrivileges  = true;
+        ReadWritePaths   = [ "/var/lib/chromium" ];
 
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        NoNewPrivileges = true;
-        ReadWritePaths = [ "/var/lib/chromium" ];
+        # GPU access
+        SupplementaryGroups = optionals cfg.enableGpu [ "video" "render" ];
+        DeviceAllow         = optionals cfg.enableGpu [ "char-drm rw" ];
 
         # Suppress unavoidable Chromium noise on headless systems.
         LogFilterPatterns = [
@@ -203,14 +191,13 @@ in
           "~shared_memory_switch"
           "~gpu_blocklist"
           "~maxDynamic"
+          "~command_buffer_proxy_impl"
         ];
-        SupplementaryGroups = lib.optionals cfg.enableGpu [ "video" "render" ];
-        DeviceAllow = lib.optionals cfg.enableGpu [ "char-drm rw" ];
       };
     };
 
-    networking.firewall = lib.mkIf cfg.openFirewall {
-      allowedTCPPorts = [ cfg.port ];
+    networking.firewall = mkIf (cfg.openFirewall && cfg.remoteDebugging != null) {
+      allowedTCPPorts = [ (lib.toInt rdPort) ];
     };
   };
 }

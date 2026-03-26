@@ -53,8 +53,9 @@
   services.chromium = {
     enable = true;
     headless = true;
-    port = 9222;
+    remoteDebugging = "127.0.0.1:9222";
     enableGpu = true;
+    enableWebGPU = true;
     webglMode = "native"; # keep real GPU; change to "swiftshader" to hide HW model
     userDataDir = "/var/lib/chromium/profile"; # persistent profile
     screenSize = { width = 1366; height = 768; };

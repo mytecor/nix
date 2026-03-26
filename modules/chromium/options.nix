@@ -9,7 +9,7 @@
       default = false;
       description = ''
         Run Chromium in headless mode (--headless=new, Chrome 112+).
-        Uses the same rendering path as headed Chrome with fewer fingerprints.
+        Uses the same rendering path as headed Chrome.
       '';
     };
 
@@ -20,10 +20,14 @@
       description = "The Chromium package to use.";
     };
 
-    port = lib.mkOption {
-      type = lib.types.port;
-      default = 9222;
-      description = "CDP remote debugging port.";
+    remoteDebugging = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "127.0.0.1:9222";
+      description = ''
+        CDP remote debugging endpoint in "address:port" format.
+        When null, remote debugging is disabled.
+      '';
     };
 
     enableGpu = lib.mkOption {
@@ -36,12 +40,20 @@
       type = lib.types.enum [ "native" "swiftshader" "disable" ];
       default = "native";
       description = ''
-        WebGL rendering mode. Controls the GPU renderer fingerprint visible
-        to websites via UNMASKED_VENDOR_WEBGL / UNMASKED_RENDERER_WEBGL.
+        WebGL rendering mode.
 
-        - "native": use real hardware GPU (exposes actual GPU model)
-        - "swiftshader": software renderer (shows "Google SwiftShader")
-        - "disable": disable WebGL entirely (absence is itself a fingerprint)
+        - "native": use real hardware GPU
+        - "swiftshader": software renderer (Google SwiftShader)
+        - "disable": disable WebGL entirely
+      '';
+    };
+
+    enableWebGPU = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Enable WebGPU support (--enable-unsafe-webgpu, Vulkan backend).
+        Requires `enableGpu = true` and a Vulkan-capable GPU driver.
       '';
     };
 
@@ -60,7 +72,7 @@
     openFirewall = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Open the CDP port in the firewall.";
+      description = "Open the remote debugging port in the firewall.";
     };
 
     proxyServer = lib.mkOption {
@@ -102,12 +114,9 @@
       description = ''
         Virtual screen resolution.
         Sets both the Ozone screen size and the Chromium window size so that
-        screen.width/screen.height match the viewport — avoiding the classic
-        headless tell where viewport > screen.
+        screen.width/screen.height match the viewport.
       '';
     };
-
-    # --- Anti-detect options ---
 
     userAgent = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -116,9 +125,7 @@
       description = ''
         Override the User-Agent string.  When null (the default), a standard
         Chrome UA is auto-generated from the actual Chromium package version,
-        ensuring the UA always matches the real browser binary.  This avoids
-        the common pitfall where a hardcoded UA drifts out of sync with the
-        Chromium version in nixpkgs.
+        ensuring the UA always matches the real browser binary.
       '';
     };
 
@@ -133,14 +140,10 @@
       description = ''
         WebRTC IP handling policy.
 
-        - "default": no restrictions (leaks local + public IPs)
-        - "default_public_interface_only": WebRTC works but only
-          exposes the public IP — hides local/VPN IPs.  Looks natural
-          to detectors (WebRTC is not "disabled") while preventing
-          the most common leak vector.
+        - "default": no restrictions
+        - "default_public_interface_only": only expose public IP
         - "default_public_and_private_interfaces": expose both
-        - "disable_non_proxied_udp": fully block non-proxied UDP
-          (shows as "WebRTC: disabled" — suspicious fingerprint)
+        - "disable_non_proxied_udp": block non-proxied UDP
       '';
     };
 
@@ -148,10 +151,8 @@
       type = lib.types.bool;
       default = false;
       description = ''
-        Disable the Battery Status API.  In headless mode the API always
-        returns level=1 charging=true which is a known fingerprint.
-        Disabling it makes navigator.getBattery() reject — consistent with
-        desktop machines that have no battery.
+        Disable the Battery Status API.
+        When disabled, navigator.getBattery() rejects.
       '';
     };
 
@@ -159,8 +160,7 @@
       type = lib.types.bool;
       default = false;
       description = ''
-        Disable the HeadlessMode feature flag.  This prevents JavaScript
-        from detecting headless mode via internal Chrome feature flags.
+        Disable the HeadlessMode feature flag.
       '';
     };
 
@@ -170,7 +170,7 @@
       example = "ru-RU";
       description = ''
         Primary language for the browser UI (--lang flag).
-        Also affects navigator.language and Intl defaults.
+        Also sets navigator.language and Intl defaults.
       '';
     };
 
@@ -180,7 +180,6 @@
       example = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7";
       description = ''
         Accept-Language header value (--accept-lang flag).
-        Controls which languages websites see in the HTTP request.
       '';
     };
 
@@ -189,9 +188,7 @@
       default = null;
       example = "Europe/Moscow";
       description = ''
-        Timezone for the browser process (via TZ env variable).
-        Chromium inherits timezone from the OS environment.
-        Should match the locale/IP for consistency.
+        Timezone for the browser process (TZ env variable).
       '';
     };
 
@@ -200,10 +197,8 @@
       default = [ ];
       example = [ 22 3389 ];
       description = ''
-        Block Chromium from connecting to these ports on localhost.
-        Websites like BrowserScan probe local ports (SSH, RDP, etc.)
-        via WebSocket to fingerprint the host.  Blocking access to
-        these ports prevents detection of running services.
+        Block Chromium from connecting to these ports on localhost
+        via --host-rules.
       '';
     };
   };

@@ -1,8 +1,8 @@
-# Anti-detect preset for chromium.
+# Stealth preset for chromium.
 #
 # Returns an attribute set suitable for merging into
 # services.chromium.  Pass overrides to customise individual
-# values; anything not specified gets sensible anti-detect defaults.
+# values; anything not specified gets sensible stealth defaults.
 #
 # Usage (in a node config):
 #

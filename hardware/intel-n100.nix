@@ -17,8 +17,9 @@
   hardware.graphics = {
     enable = true;
     extraPackages = with pkgs; [
-      intel-media-driver # VAAPI (iHD)
+      intel-media-driver   # VAAPI (iHD)
       intel-compute-runtime # OpenCL
+      vpl-gpu-rt           # Intel Video Processing Library
     ];
   };
 }
